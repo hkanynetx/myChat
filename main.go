@@ -2,23 +2,26 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
+	"io"
+	"log"
 	"myChat/apiV1"
 	"net/http"
+	"os"
 )
 
 /* 主函数 */
 func main() {
 
 	// 设置日志
-	//gin.DisableConsoleColor()
-	//f, err := os.Create("./logs/run.log")
-	//if err != nil {
-	//	log.Println("Could not open log.")
-	//	panic(err)
-	//}
-	//gin.DefaultWriter = io.MultiWriter(f)
-	//
-	//gin.SetMode(gin.ReleaseMode)
+	gin.DisableConsoleColor()
+	f, err := os.Create("./logs/run.log")
+	if err != nil {
+		log.Println("Could not open log.")
+		panic(err)
+	}
+	gin.DefaultWriter = io.MultiWriter(f)
+
+	gin.SetMode(gin.ReleaseMode)
 	// 创建实例
 	r := gin.Default()
 
@@ -36,7 +39,7 @@ func main() {
 		context.JSON(http.StatusNotFound, gin.H{"Status": 404, "msg": "Page Not Found"})
 	})
 
-	err := r.Run("localhost:10888")
+	err = r.Run("localhost:10888")
 	if err != nil {
 		panic(err)
 	}
