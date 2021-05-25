@@ -29,36 +29,50 @@ func Connect(c *gin.Context) {
 	_, msg, err := ws.ReadMessage()
 	// 初始化用户
 	uid, err := uuid.NewUUID()
-	user := User {
-		Name: string(msg),
-		Uid: uid,
+	user := User{
+		Name:       string(msg),
+		Uid:        uid,
 		CreateTime: time.Now().Unix(),
-		Conn: ws,
+		Conn:       ws,
 	}
 	// 将该用户添加至 AllUser
 	AllUser = append(AllUser, user)
 
-	// 初始化
-	_ = user.Conn.WriteJSON(bson.M{"data": user, "type": "init"})
-	for _, u := range AllUser {
-		_ = u.Conn.WriteJSON(bson.M{"data": user, "type": "add"})
-	}
+	//初始化
+	Broadcast(bson.M{"data": user, "type": "add"})
+
 	// 等待该用户发送消息
 	go WaitForSend(user)
 }
 
 // WaitForSend 等待该用户发送消息
 func WaitForSend(user User) {
+	var msg bson.M
+	var myMsg Msg
 	for {
-		_, msg, err := user.Conn.ReadMessage()
+		err := user.Conn.ReadJSON(&msg)
 		if err != nil {
 			break
 		}
-		myMsg := Msg{
-			SendUser: &user,
-			ReceiveUser: nil,
-			Time: time.Now().Unix(),
-			Data: string(msg),
+		if msg["uid"] == "" {
+			myMsg = Msg{
+				SendUser:    &user,
+				ReceiveUser: nil,
+				Time:        time.Now().Unix(),
+				Data:        msg["msg"].(string),
+			}
+		} else {
+			for _, u := range AllUser {
+				if u.Uid.String() == msg["uid"].(string) {
+					myMsg = Msg{
+						SendUser:    &user,
+						ReceiveUser: &u,
+						Time:        time.Now().Unix(),
+						Data:        msg["msg"].(string),
+					}
+					break
+				}
+			}
 		}
 		Send(myMsg)
 	}
@@ -66,48 +80,30 @@ func WaitForSend(user User) {
 	defer Logout(user)
 }
 
-// WaitForReceive 用于接收消息
-func WaitForReceive(user User) {
-	for {
-		_, msg, err := user.Conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		myMsg := Msg{
-			SendUser: &user,
-			Time: time.Now().Unix(),
-			Data: string(msg),
-		}
-		Send(myMsg)
-	}
-	defer Logout(user)
-}
-
 // Send 发送消息
 func Send(msg Msg) {
-	// 若msg 的接收方为空，则为广播消息
+	// 接收者为空，广播消息
 	if msg.ReceiveUser == nil {
-		for _, user := range AllUser {
-			err := user.Conn.WriteJSON(bson.M{"data": msg, "type":"receive"})
-			if err != nil {
-				log.Println("用户退出失败，", err)
-			}
-		}
-		// 不为空表示私聊
-	} else {
+		Broadcast(bson.M{"data": msg, "type": "receive"})
 
+		// 私聊消息
+	} else {
+		// 发送消息
+		err := msg.ReceiveUser.Conn.WriteJSON(bson.M{"data": msg, "type": "private"})
+		if err != nil {
+			log.Println("写入失败，", err)
+		}
+		// 发送消息
+		err = msg.SendUser.Conn.WriteJSON(bson.M{"data": msg, "type": "private"})
+		if err != nil {
+			log.Println("写入失败，", err)
+		}
 	}
 }
 
 // Logout 退出登录
 func Logout(user User) {
-	for _, u := range AllUser {
-		err := u.Conn.WriteJSON(bson.M{"data": user, "type":"logout"})
-		if err != nil {
-			log.Println("用户退出失败，", err)
-		}
-	}
-
+	// 释放内存
 	for i, each := range AllUser {
 		if user.Uid == each.Uid {
 			// 关闭连接
@@ -120,4 +116,25 @@ func Logout(user User) {
 			break
 		}
 	}
+	// 通知所有在线用户
+	Broadcast(bson.M{"data": user, "type": "logout"})
+}
+
+// Broadcast 全体广播
+func Broadcast(msg bson.M) {
+	for _, user := range AllUser {
+		err := user.Conn.WriteJSON(msg)
+		if err != nil {
+			log.Println("写入失败，", err)
+		}
+	}
+}
+
+// GetAllMembers 当前聊天室总人数
+func GetAllMembers(c *gin.Context) {
+	length := len(AllUser)
+	c.JSON(200, gin.H{
+		"length": length,
+		"status": true,
+	})
 }

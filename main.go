@@ -23,7 +23,10 @@ func main() {
 	r := gin.Default()
 
 	// ApiV1
+	api := r.Group("/api/v1")
 	ws := r.Group("/ws")
+
+	api.GET("/length", apiV1.GetAllMembers)
 
 	// WebSocket
 	ws.GET("/connect", apiV1.Connect)
@@ -38,4 +41,3 @@ func main() {
 		panic(err)
 	}
 }
-
